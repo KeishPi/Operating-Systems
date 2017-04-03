@@ -1,0 +1,134 @@
+#!/bin/bash
+#Author: Keisha Arnold
+#Description: bash shell script to compute statistics
+#CS 344-400
+#Note: #-- are my notes/comments, # are test/trace statements
+
+datafilepath="datafile$$"
+temp1="temp1$$"
+stats_file="stats_file$$"
+stats_file_col="stats_file_col$$"
+
+#--remove temp files if program quits unexpectedly
+trap "rm -rf temp1$$ stats_file$$ stats_file_col$$ datafile$$; echo 'CTRL+C received, exiting'; exit 1" INT HUP TERM
+
+#--checks that there is at least 1 arg and correct format 
+#--error if there are 0 arg or if $1 is not in correct format
+if [[ $1 != -r* && $1 != -c* ]]; then	
+       echo "./stats {-rows|-cols} [file]" 1>&2
+       exit 1
+fi
+
+#--if there is no 2nd arg then write stdin to file
+if [ "$#" = "1" ]; then
+    #echo "only one argument"
+    cat > "$datafilepath"
+#--2 arguments, check file is not empty & readable 
+elif [ "$#" = "2" ]; then
+    #echo "there are two arguments"
+    if [ ! -s "$2" ]; then
+	#echo "./stats: $2 is empty" 1>&2
+	echo "./stats: cannot read $2" 1>&2
+	exit 0	#--not an error
+    elif [ ! -r "$2" ]; then
+    	echo "./stats: cannot read $2" 1>&2
+    	exit 1
+    else
+	datafilepath=$2 
+    fi	
+#--there are more than 2 arguments- error
+else
+    echo "./stats {-rows|-cols} [file]" 1>&2
+    exit 1
+fi
+
+#--count rows/cols, so we know how many times to loop
+if [[ $1 == -c* ]]; then
+    totalCount=$(head -n 1 $datafilepath | wc -w)
+else
+    totalCount=$(wc -l < $datafilepath)
+fi
+#echo $totalCount
+
+row_num=1
+sum=0
+
+#--grab row/column
+#--use totalCount to loop thru file a set number of times (rows/cols)
+for x in $(seq 1 $totalCount); do
+    if [[ $1 == -r* ]]; then
+        #echo "calculating row stats..."
+	#--use head/tail to target a specific row
+	#--switch \t to \n (#'s need to be in colums to sort), sort, put in temp file
+        head -n $row_num < $datafilepath | tail -n 1 | tr "\t" "\n" | sort -n  > $temp1
+  	#head -n $row_num < $test_file | tail -n 1 > $temp1
+        #sort -n $temp1
+        #cat $temp1
+    elif [[ $1 = -c* ]]; then 
+        #echo "calculating column stats..."
+	#--use cut -f to target specific column, sort, put in temp file
+        cut -f $row_num < $datafilepath | sort -n > $temp1
+        #cat $temp1
+    else
+        echo "./stats {-rows|-cols} [file]" 1>&2
+        exit 1
+    fi
+  
+    #--calculate sum
+    while read num 
+    do
+        sum=`expr $sum + $num`
+    done < $temp1
+    #echo "sum is: $sum"
+
+    #--calcuate mean
+    count=($(wc -w < $temp1))
+    #wc -w $temp1
+    #mean=`expr $sum / $count
+    #--use this expr instead to round up from .5`
+    mean=$(( ( sum + (( count / 2 )) )  / count ))
+    #echo "mean is: $mean"
+
+    #--calculate median
+    #--since numbers are sorted, even if we have an even set, we will always take (count/2)+1
+    mid_set=$(( ( count / 2 ) + 1 ))
+    #mid_even=$(( count / 2 ))
+    #--target specific row of $mid_set using/head and tail 
+    median=$(head -n $mid_set < $temp1 | tail -n 1)
+    #echo "median is: $median"
+		
+    #--format stats in stats_file
+    if [[ $1 == -r* ]]; then
+	#--row stats output in columns 
+        echo "$mean"$'\t'"$median" >> $stats_file
+	#cat $stats_file
+    else
+	#--column stats output in rows
+        echo "$mean"$'\t'"$median" >> $stats_file
+	echo "Averages: " > $stats_file_col
+	#--$stats_file is in cols, change it to rows, put in $stats_file_col
+	cut -f 1 < $stats_file | tr "\n" "\t" >> $stats_file_col
+	echo >> $stats_file_col
+	echo "Medians: " >> $stats_file_col
+	cut -f 2 < $stats_file | tr "\n" "\t" >> $stats_file_col 
+	echo >> $stats_file_col
+	#cat $stats_file_col
+    fi
+
+#--reset sum to 0 and increment row_num to go to next row/col	
+sum=0	 
+row_num=$(expr $row_num + 1) 
+done < $datafilepath
+
+#--output stats	
+if [[ $1 == -r* ]]; then
+    echo "Average"$'\t'"Median" 
+    cat $stats_file
+else
+    cat $stats_file_col
+fi
+
+#--remove temp files at the end of a successful run
+rm -rf temp1$$ stats_file$$ stats_file_col$$ datafile$$; 
+exit 0
+
